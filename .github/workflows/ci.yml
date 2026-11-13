@@ -1,0 +1,20 @@
+# Stands in for a mandatory build and security check. It fails when a file
+# named ci-should-fail exists, so a test can make the check fail on purpose.
+name: ci
+on:
+  pull_request:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: |
+          if [ -e ci-should-fail ]; then echo "simulated failing check"; exit 1; fi
+          echo "checks passed"

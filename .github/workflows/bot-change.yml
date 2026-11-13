@@ -1,0 +1,46 @@
+# Test helper: makes a change on a branch and opens a pull request as the
+# workflow's own identity, so that two people can approve it.
+name: bot-change
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        required: true
+      path:
+        required: true
+      content:
+        required: false
+        default: ''
+      remove:
+        type: boolean
+        default: false
+permissions: {}
+jobs:
+  change:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ inputs.branch }}
+          FILE_PATH: ${{ inputs.path }}
+          CONTENT: ${{ inputs.content }}
+          REMOVE: ${{ inputs.remove }}
+        run: |
+          repo="$GITHUB_REPOSITORY"
+          base=$(gh api "repos/$repo/git/ref/heads/main" --jq .object.sha)
+          gh api "repos/$repo/git/ref/heads/$BRANCH" > /dev/null 2>&1 \
+            || gh api -X POST "repos/$repo/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$base" > /dev/null
+          sha=$(gh api "repos/$repo/contents/$FILE_PATH?ref=$BRANCH" --jq .sha 2> /dev/null || true)
+          if [ "$REMOVE" = true ]; then
+            gh api -X DELETE "repos/$repo/contents/$FILE_PATH" -f message="Remove $FILE_PATH" -f branch="$BRANCH" -f sha="$sha" > /dev/null
+          elif [ -n "$sha" ]; then
+            gh api -X PUT "repos/$repo/contents/$FILE_PATH" -f message="Change $FILE_PATH" -f branch="$BRANCH" -f content="$(printf '%s' "$CONTENT" | base64 -w0)" -f sha="$sha" > /dev/null
+          else
+            gh api -X PUT "repos/$repo/contents/$FILE_PATH" -f message="Add $FILE_PATH" -f branch="$BRANCH" -f content="$(printf '%s' "$CONTENT" | base64 -w0)" > /dev/null
+          fi
+          gh pr view "$BRANCH" --repo "$repo" > /dev/null 2>&1 \
+            || gh pr create --repo "$repo" --base main --head "$BRANCH" --title "Workflow change on $BRANCH" --body "Opened by a workflow for the ruleset test."
